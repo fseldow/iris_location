@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-###########################################################region grow #########################################
+###########################################################region grow#########################################
 def regionGrow(src,threshold):
     extend=cv2.copyMakeBorder(src,0,0,0,0,cv2.BORDER_REPLICATE)
     height=src.shape[0]
@@ -15,6 +15,7 @@ def regionGrow(src,threshold):
             dst=helper(extend,dst,row,col,L,value,threshold)
             L=L+1
     return dst
+
 def helper(src,dst,row,col,L,value,threshold):
     if row<0 or row>=dst.shape[0] or col<0 or col>=dst.shape[1]:
         return dst
@@ -28,6 +29,7 @@ def helper(src,dst,row,col,L,value,threshold):
     dst=helper(src, dst, row, col+1, L, value,threshold)
     dst=helper(src, dst, row, col-1, L, value,threshold)
     return dst
+
 ##########################################################thresholding methods#########################################
 def calHistCircle(img,center_x,center_y,radius):
     hist=[]
@@ -39,6 +41,7 @@ def calHistCircle(img,center_x,center_y,radius):
                 continue
             hist[img[row,col]]+=1
     return hist
+
 def otsu_thresholding(hist):
     sumHist=[0]
 
@@ -54,6 +57,7 @@ def otsu_thresholding(hist):
         thresh=(x1+x2)/2
         count+=1
     return thresh
+
 def peak_thresholding(hist,min_d):
     max1=0
     max1_pos=0
@@ -74,6 +78,7 @@ def peak_thresholding(hist,min_d):
             continue
     thresh=(max1_pos+max2_pos)/2
     return thresh
+
 ############################################################get final result from boundary#############################
 def getCenterFromContours(contours):
     pupil=contours[0]
@@ -91,6 +96,7 @@ def getCenterFromContours(contours):
     x_mean/=pupil.shape[0]
     y_mean /= pupil.shape[0]
     return (x_mean,y_mean)
+
 ##############################################################get Hough circle#########################################
 def adactiveHoughPara(gray_edge,dp):
     nRows=gray_edge.shape[0]
@@ -99,33 +105,40 @@ def adactiveHoughPara(gray_edge,dp):
     end=4*nRows
     while start<=end:
         param2 = int((start + end) / 2)
-        circles = cv2.HoughCircles(gray_edge,
-                                   cv2.HOUGH_GRADIENT,
-                                   dp,
-                                   5,
-                                   minRadius=int(nRows / 15),
-                                   maxRadius=int(nRows / 5),
-                                   param2=param2)
+
+        try:
+            circles = cv2.HoughCircles(gray_edge,
+                                       cv2.HOUGH_GRADIENT,
+                                       dp,
+                                       5,
+                                       minRadius=int(nRows / 20),
+                                       maxRadius=int(nRows / 7),
+                                       param2=param2)
+        except:
+            return [[]]
+
         if circles is None:
             end=param2-1
             continue
-        print(circles.shape)
+
+        #print(circles)
+        #print(circles.shape)
         if circles.shape[1]>1:
             start=param2+1
             continue
         if circles.shape[1]==1:
-            print(circles[0,0,:])
+            #print(circles[0,0,:])
             return circles
     return [[]]
 
 ############################################################algorithm part 1 ###########################################
 def getRoughCircle(src,
-                   smooth_method='mean',
+                   smooth_method='median',
                    edge_method='canny',
-                   filter_size=5,
-                   edge_thresh1=50,
-                   edge_thresh2=75,
-                   hough_dp=2):
+                   filter_size=11,
+                   hough_dp=1.5,
+                   edge_thresh1=30,
+                   edge_thresh2=120):
 
     src_img = src.copy()
     nRows = src_img.shape[0]
@@ -137,7 +150,7 @@ def getRoughCircle(src,
     if smooth_method=='mean':
         gray = cv2.blur(gray, (filter_size, filter_size))
     if smooth_method=='median':
-        gray=cv2.medianBlur(gray,(filter_size, filter_size))
+        gray=cv2.medianBlur(gray,filter_size)
     if smooth_method=='morph':
         kernel_pre = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (filter_size, filter_size))
         gray = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel_pre)
@@ -146,20 +159,23 @@ def getRoughCircle(src,
     if edge_method=='canny':
         gray_edge = cv2.Canny(gray, edge_thresh1, edge_thresh2)
     if edge_method=='sobel':
-        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=filter_size)
-        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=filter_size)
-        gray_edge=cv2.addWeighted(sobelx,0.5,sobely,0.5)
+        sobelx = cv2.Sobel(gray, cv2.CV_8UC1, 1, 0, ksize=filter_size)
+        sobely = cv2.Sobel(gray, cv2.CV_8UC1, 0, 1, ksize=filter_size)
+        gray_edge=cv2.addWeighted(sobelx,0.5,sobely,0.5,0)
     if edge_method=='laplacian':
-        gray_edge=cv2.Laplacian(gray,ksize=filter_size)
+        gray_edge=cv2.Laplacian(gray,cv2.CV_8UC1,ksize=filter_size)
 
     ##########################################getRoughCircle########################
 
     # circles = cv2.HoughCircles(gray_edge,cv2.HOUGH_GRADIENT, 2, 10,maxRadius=int(gray_edge.shape[0]/7),param2=50)
     circles = adactiveHoughPara(gray_edge,hough_dp)
     circles = np.uint16(np.around(circles))
-    if circles is None:
-        return [-1,-1,-1]
-    ret=circles[0,0,:]
+
+    try:
+        ret=circles[0,0,:]
+    except:
+        return (gray,[-1,-1,-1])
+
     ret[2]*=2
     return (gray,ret)
 
@@ -177,7 +193,7 @@ def preciseLocation(gray,
         threshold = peak_thresholding(hist, 20)
     if thresholding_method=='otsu':
         threshold = otsu_thresholding(hist)
-    print('thresh', threshold)
+    #print('thresh', threshold)
     (threshold, binary) = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY_INV)
     # set region out of circle all 0
     for row in range(binary.shape[0]):
@@ -191,7 +207,7 @@ def preciseLocation(gray,
     if morph_kernel_size_rate>0:
         kernel1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(circle[2] / morph_kernel_size_rate), int(circle[2] / morph_kernel_size_rate)))
         kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(circle[2] / 8), int(circle[2] / 8)))
-        # binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel1)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel1)
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel1)
     cv2.imshow('canny2', binary)
 
@@ -205,58 +221,20 @@ def preciseLocation(gray,
 
 
 def getCorneaCenter(src):
-    (x,y)=(0,0)
     src_img=src.copy()
-    nRows=src_img.shape[0]
-    nCols=src_img.shape[1]
-    ##########################################preprocess############################
-    src_img=cv2.cvtColor(src_img, cv2.COLOR_BGR2GRAY)
-    gray=src_img.copy()
-    gray=cv2.blur(gray,(5,5))
-    kernel_pre = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (10,10))
-    #gray = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel_pre)
-    #gray = cv2.erode(gray,kernel,iterations = 1)
-    #result=regionGrow(erosion,5)
-    gray_edge=cv2.Canny(gray,50,100)
+    nRow = src_img.shape[0]
+    nCol = src_img.shape[1]
+    ft=240/nRow
+    src_img=cv2.resize(src_img,None,fx=ft,fy=ft,interpolation = cv2.INTER_CUBIC)
 
-    ##########################################getLargeCircle########################
+    (gray,circle)=getRoughCircle(src_img)
+    if circle[0]==-1:
+        (x,y)=(src_img.shape[0]/2,src_img.shape[1]/2)
+        return (x,y)
+    cv2.circle(src_img,(int(circle[0]),int(circle[1])),int(circle[2]),(255,0,0),thickness=2)
+    cv2.imshow('circle',src_img)
 
-    #circles = cv2.HoughCircles(gray_edge,cv2.HOUGH_GRADIENT, 2, 10,maxRadius=int(gray_edge.shape[0]/7),param2=50)
-    circles=adactiveHoughPara(gray_edge,1.5)
-    circles = np.uint16(np.around(circles))
-    for i in circles[0,:]:
-        # draw the outer circle
-        i[2]*=2
-        #cv2.circle(src,(i[0],i[1]),int(i[2]),(0,255,0),2)
-        # draw the center of the circle
-        #cv2.circle(src_img,(i[0],i[1]),2,(0,0,255),3)
-
-        ##########################################calculate Center#######################
-
-        hist=calHistCircle(gray,i[0],i[1],i[2])
-        threshold=peak_thresholding(hist,20)
-        print('thresh',threshold)
-        (threshold,binary)=cv2.threshold(gray,threshold,255,cv2.THRESH_BINARY_INV)
-        for row in range(binary.shape[0]):
-            for col in range(binary.shape[1]):
-                if (row-i[1])**2+(col-i[0])**2>=i[2]**2:
-                    binary[row,col]=0
-    
-        cv2.imshow('canny1', binary)
-        kernel1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(i[2] / 3), int(i[2] / 3)))
-        kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(i[2] / 8), int(i[2] / 8)))
-        #binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel1)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel1)
-
-        cv2.imshow('canny2', binary)
-        contours = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[1]
-        (x,y)=getCenterFromContours(contours)
-        print(x,y)
-        cv2.drawContours(src, contours, -1, (0, 0, 255), 2)
-
-
-    cv2.imshow('ori',src)
-    cv2.imshow('gray', gray)
-    cv2.imshow('canny', gray_edge)
-    cv2.waitKey(0)
+    (x,y)=preciseLocation(gray,circle)
+    x/=ft
+    y/=ft
     return (x,y)

@@ -3,6 +3,8 @@ import os
 import fnmatch
 import src.FileOperation as fo
 import src.haar_cascade.haarcascade as hc
+from matplotlib import pyplot as plt
+import cmath
 
 import config
 import getCenter
@@ -33,16 +35,27 @@ def ifInclude(circle,circle_truth):
     boundary=(circle[2]-circle_truth[2])**2
     return 1*(dis<boundary)
 def calculateDise(circle,circle_truth):
-    return (circle[0]-circle_truth[0])**2+(circle[1]-circle_truth[1])**2
+    return cmath.sqrt((circle[0]-circle_truth[0])**2+(circle[1]-circle_truth[1])**2)/circle_truth[2]
 
 sum=0
+
 for item in image_sets_name:
     print('image',item)
     truth=fo.readGroundTruth(item)
     src_img=cv2.imread(config.DataSetPath+item)
-    point=getCenter.getCorneaCenter(src_img)
-    sum+=calculateDise(point,truth)
-    print('loss',calculateDise(point,truth))
+    count=0
+    src=src_img.copy()
+    (x,y)=getCenter.getCorneaCenter(src)
+    center=(int(x),int(y))
+    nRow=src_img.shape[0]
+    tf=nRow/360
+    cv2.circle(src,(int(x),int(y)),int(3*tf),(0,255,0),thickness=2*int(7*tf))
+    sum+=calculateDise(center,truth)
+    cv2.imwrite(config.resultSetPath+'ret_'+item,src)
+    cv2.imshow('result',src)
+    #cv2.waitKey(0)
+    #sum+=calculateDise(point,truth)
+    #print('loss',calculateDise(point,truth))
     print('')
 result=sum/len(image_sets_name)
 print(result)
