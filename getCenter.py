@@ -233,7 +233,7 @@ def getCorneaCenter(src):
         return (x,y)
     cv2.circle(src_img,(int(circle[0]),int(circle[1])),int(circle[2]),(255,0,0),thickness=2)
     cv2.imshow('circle',src_img)
-
+    return (circle[0]/ft,circle[1]/ft)
     (x,y)=preciseLocation(gray,circle)
     x/=ft
     y/=ft
